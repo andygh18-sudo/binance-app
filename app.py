@@ -1,159 +1,274 @@
+import streamlit as st
 import ccxt
 import pandas as pd
-import streamlit as st
 from ta.momentum import RSIIndicator
-import requests
+import time
 
-# -----------------------
+# =========================
 # CONFIG
-# -----------------------
-exchange = ccxt.coinbase()
+# =========================
 
-TIMEFRAME_M = "1M"
-TIMEFRAME_W = "1w"
+st.set_page_config(
+    page_title="Crypto Alpha Scanner",
+    layout="wide"
+)
 
-MIN_VOLUME = 5_000_000
-MIN_MC_PROXY = 50_000_000
+EXCHANGES = {
+    "Bybit": ccxt.bybit({"enableRateLimit": True}),
+    "OKX": ccxt.okx({"enableRateLimit": True}),
+    "KuCoin": ccxt.kucoin({"enableRateLimit": True}),
+    "Binance": ccxt.binance({"enableRateLimit": True}),
+}
 
-# -----------------------
-# TELEGRAM (optional)
-# -----------------------
-TELEGRAM_TOKEN = ""  # add if needed
-TELEGRAM_CHAT_ID = ""
+DEFAULT_COINS = [
+    "BTC/USDT",
+    "ETH/USDT",
+    "SOL/USDT",
+    "LINK/USDT",
+    "TAO/USDT",
+    "AKT/USDT",
+    "ONDO/USDT",
+    "AIOZ/USDT",
+"WLD/USDT",
+"OP/USDT",
+"ARB/USDT",
+"FET/USDT",
+"SUI/USDT",
+]
 
+# =========================
+# DATA
+# =========================
 
-def send_telegram(msg):
-    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-        return
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    requests.post(url, data={"chat_id": TELEGRAM_CHAT_ID, "text": msg})
+@st.cache_data(ttl=3600)
+def fetch_rsi(exchange_name, symbol):
 
+    exchange = EXCHANGES[exchange_name]
 
-# -----------------------
-# DATA FETCH
-# -----------------------
-def fetch(symbol, tf, limit=100):
     try:
-        data = exchange.fetch_ohlcv(symbol, timeframe=tf, limit=limit)
-        df = pd.DataFrame(data, columns=["t","o","h","l","c","v"])
-        return df
+
+        weekly = exchange.fetch_ohlcv(
+            symbol,
+            timeframe="1w",
+            limit=100
+        )
+
+        monthly = exchange.fetch_ohlcv(
+            symbol,
+            timeframe="1M",
+            limit=100
+        )
+
+        wdf = pd.DataFrame(
+            weekly,
+            columns=["t","o","h","l","c","v"]
+        )
+
+        mdf = pd.DataFrame(
+            monthly,
+            columns=["t","o","h","l","c","v"]
+        )
+
+        weekly_rsi = RSIIndicator(
+            wdf["c"],
+            window=14
+        ).rsi().iloc[-1]
+
+        monthly_rsi = RSIIndicator(
+            mdf["c"],
+            window=14
+        ).rsi().iloc[-1]
+
+        price = wdf["c"].iloc[-1]
+
+        volume = wdf["v"].iloc[-1]
+
+        return {
+            "symbol": symbol,
+            "price": price,
+            "weekly_rsi": round(float(weekly_rsi), 2),
+            "monthly_rsi": round(float(monthly_rsi), 2),
+            "volume": volume
+        }
+
     except:
         return None
 
+# =========================
+# SCORING
+# =========================
 
-def compute_rsi(df):
-    return RSIIndicator(df["c"], window=14).rsi().iloc[-1]
+def score(row):
 
+    s = 0
 
-# -----------------------
-# SCORING ENGINE
-# -----------------------
-def score_coin(monthly_rsi, weekly_rsi, volume, mc_proxy):
+    if row["weekly_rsi"] < 30:
+        s += (30 - row["weekly_rsi"]) * 2
 
-    score = 0
+    if row["weekly_rsi"] > 60:
+        s += 20
 
-    # Oversold strength
-    score += (30 - monthly_rsi) * 2
+    if row["monthly_rsi"] > 60:
+        s += 20
 
-    # Weekly confirmation
-    if weekly_rsi > monthly_rsi:
-        score += 15
-    if weekly_rsi > 40:
-        score += 10
+    if row["weekly_rsi"] > row["monthly_rsi"]:
+        s += 10
 
-    # Volume quality
-    score += min(volume / 1_000_000, 50)
+    return round(s, 2)
 
-    # Market cap proxy (size quality)
-    score += min(mc_proxy / 10_000_000, 20)
+# =========================
+# SIDEBAR
+# =========================
 
-    return score
+st.sidebar.title("Scanner Settings")
 
+exchange_name = st.sidebar.selectbox(
+    "Exchange",
+    list(EXCHANGES.keys())
+)
 
-# -----------------------
-# SCANNER
-# -----------------------
-def scan():
-    markets = exchange.load_markets()
+watchlist = st.sidebar.multiselect(
+    "Watchlist",
+    DEFAULT_COINS,
+    default=DEFAULT_COINS
+)
 
-    symbols = [
-        s for s in markets
-        if s.endswith("/USDT") and markets[s]["active"]
-    ]
+oversold_only = st.sidebar.checkbox(
+    "Weekly RSI < 30"
+)
 
-    results = []
+momentum_only = st.sidebar.checkbox(
+    "Weekly RSI > 60 and Monthly RSI > 60"
+)
 
-    for sym in symbols:
+# =========================
+# SCAN
+# =========================
 
-        m = fetch(sym, TIMEFRAME_M)
-        if m is None or len(m) < 20:
-            continue
+st.title("🚀 Crypto Alpha Scanner")
 
-        w = fetch(sym, TIMEFRAME_W)
-        if w is None or len(w) < 20:
-            continue
+rows = []
 
-        # metrics
-        monthly_rsi = compute_rsi(m)
-        weekly_rsi = compute_rsi(w)
+progress = st.progress(0)
 
-        volume = m["v"].mean()
-        price = m["c"].iloc[-1]
+for i, symbol in enumerate(watchlist):
 
-        mc_proxy = price * volume
+    result = fetch_rsi(
+        exchange_name,
+        symbol
+    )
 
-        # filters
-        if volume < MIN_VOLUME:
-            continue
+    if result:
 
-        if mc_proxy < MIN_MC_PROXY:
-            continue
+        result["score"] = score(result)
 
-        if monthly_rsi >= 30:
-            continue
+        rows.append(result)
 
-        if not (weekly_rsi > monthly_rsi or weekly_rsi > 40):
-            continue
+    progress.progress(
+        (i + 1) / len(watchlist)
+    )
 
-        score = score_coin(monthly_rsi, weekly_rsi, volume, mc_proxy)
+df = pd.DataFrame(rows)
 
-        results.append({
-            "symbol": sym,
-            "monthly_rsi": monthly_rsi,
-            "weekly_rsi": weekly_rsi,
-            "volume": volume,
-            "mc_proxy": mc_proxy,
-            "score": score
-        })
+# =========================
+# FILTERS
+# =========================
 
-    return sorted(results, key=lambda x: x["score"], reverse=True)
+if not df.empty:
 
+    if oversold_only:
+        df = df[
+            df["weekly_rsi"] < 30
+        ]
 
-# -----------------------
-# STREAMLIT UI
-# -----------------------
-st.set_page_config(page_title="Crypto Alpha Scanner", layout="wide")
+    if momentum_only:
+        df = df[
+            (df["weekly_rsi"] > 60)
+            &
+            (df["monthly_rsi"] > 60)
+        ]
 
-st.title("🚀 Binance Alpha Scanner (RSI + Trend + Volume)")
+    df = df.sort_values(
+        "score",
+        ascending=False
+    )
 
-if st.button("Run Scan"):
-    with st.spinner("Scanning market..."):
-        data = scan()
+# =========================
+# DASHBOARD
+# =========================
 
-    if not data:
-        st.warning("No setups found.")
-    else:
-        df = pd.DataFrame(data)
+col1, col2, col3 = st.columns(3)
 
-        st.success(f"Found {len(df)} setups")
+with col1:
+    st.metric(
+        "Coins",
+        len(df)
+    )
 
-        st.dataframe(df)
+with col2:
+    if len(df):
+        st.metric(
+            "Top Score",
+            df["score"].max()
+        )
 
-        # top signal alert
-        top = df.iloc[0]
-        msg = f"🔥 TOP SIGNAL: {top['symbol']} | Score {top['score']:.2f}"
-        st.write(msg)
+with col3:
+    if len(df):
+        st.metric(
+            "Average Weekly RSI",
+            round(
+                df["weekly_rsi"].mean(),
+                2
+            )
+        )
 
-        send_telegram(msg)
+st.divider()
 
-        st.bar_chart(df.set_index("symbol")["score"])
+st.subheader("TradingView Style Scanner")
+
+st.dataframe(
+    df,
+    use_container_width=True
+)
+
+# =========================
+# TOP SIGNALS
+# =========================
+
+st.subheader("Top Opportunities")
+
+if len(df):
+
+    top5 = df.head(5)
+
+    for _, row in top5.iterrows():
+
+        st.success(
+            f"""
+            {row['symbol']}
+
+            Score: {row['score']}
+
+            Weekly RSI: {row['weekly_rsi']}
+
+            Monthly RSI: {row['monthly_rsi']}
+            """
+        )
+
+# =========================
+# AUTO REFRESH
+# =========================
+
+auto = st.sidebar.checkbox(
+    "Auto Refresh"
+)
+
+if auto:
+
+    st.sidebar.info(
+        "Refreshing every 5 minutes"
+    )
+
+    time.sleep(300)
+
+    st.rerun()
