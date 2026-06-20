@@ -7,7 +7,7 @@ import requests
 # -----------------------
 # CONFIG
 # -----------------------
-exchange = ccxt.bybit()
+exchange = ccxt.coinbase()
 
 TIMEFRAME_M = "1M"
 TIMEFRAME_W = "1w"
