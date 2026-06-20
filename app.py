@@ -36,8 +36,7 @@ DEFAULT_COINS = [
 "SUI/USDT",
     "SEI/USDT",
     "AVAX/USDT",
-    "RENDER/USDT",
-    "SEI/USDT",
+    "RENDER/USDT",  
     "TIA/USDT",
     "LINK/USDT",
     "APT/USDT",
@@ -146,6 +145,7 @@ watchlist = st.sidebar.multiselect(
 
 oversold_only = st.sidebar.checkbox(
     "Weekly RSI < 30"
+    "Monthly RSI > 30"
 )
 
 momentum_only = st.sidebar.checkbox(
