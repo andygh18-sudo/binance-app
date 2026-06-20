@@ -144,14 +144,6 @@ watchlist = st.sidebar.multiselect(
 )
 
 oversold_only = st.sidebar.checkbox(
-    "Weekly RSI < 30"
-)
-
-oversold_only = st.sidebar.checkbox(
-    "Monthly RSI < 30"
-)
-
-oversold_only = st.sidebar.checkbox(
     "Weekly RSI < 30 and Monthly RSI < 30"
 )
 
