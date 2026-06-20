@@ -14,10 +14,10 @@ st.set_page_config(
 )
 
 EXCHANGES = {
-    "Bybit": ccxt.bybit({"enableRateLimit": True}),
-    "OKX": ccxt.okx({"enableRateLimit": True}),
+    #"Bybit": ccxt.bybit({"enableRateLimit": True}),
+    #"OKX": ccxt.okx({"enableRateLimit": True}),
     "KuCoin": ccxt.kucoin({"enableRateLimit": True}),
-    "Binance": ccxt.binance({"enableRateLimit": True}),
+    #"Binance": ccxt.binance({"enableRateLimit": True}),
 }
 
 DEFAULT_COINS = [
@@ -34,6 +34,17 @@ DEFAULT_COINS = [
 "ARB/USDT",
 "FET/USDT",
 "SUI/USDT",
+    "SEI/USDT",
+    "AVAX/USDT",
+    "RENDER/USDT",
+    "SEI/USDT",
+    "TIA/USDT",
+    "LINK/USDT",
+    "APT/USDT",
+    "VIRTUAL/USDT",
+    "RUNE/USDT",
+    "ENA/USDT",
+    "LDO/USDT",
 ]
 
 # =========================
