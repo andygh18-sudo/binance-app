@@ -144,7 +144,7 @@ watchlist = st.sidebar.multiselect(
 )
 
 oversold_only = st.sidebar.checkbox(
-    "Weekly RSI < 30 and Monthly RSI < 30"
+    "Weekly RSI < 30"
 )
 
 momentum_only = st.sidebar.checkbox(
